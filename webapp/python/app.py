@@ -198,17 +198,34 @@ def get_message():
     channel_id = int(flask.request.args.get('channel_id'))
     last_message_id = int(flask.request.args.get('last_message_id'))
     cur = dbh().cursor()
-    cur.execute("SELECT * FROM message WHERE id > %s AND channel_id = %s ORDER BY id DESC LIMIT 100",
-                (last_message_id, channel_id))
+
+    cur.execute("""
+    SELECT m.id as m_id,
+      m.created_at as m_created_at,
+      content as m_content,
+      u.name as u_name,
+      u.display_name as u_display_name,
+      u.avatar_icon as u_avatar_icon
+    FROM message m
+      inner join user u ON m.user_id = u.id
+    WHERE m.id > %s
+      AND m.channel_id = %s
+    ORDER BY m.id DESC
+    LIMIT 100
+    """, (last_message_id, channel_id))
     rows = cur.fetchall()
     response = []
     for row in rows:
         r = {}
-        r['id'] = row['id']
-        cur.execute("SELECT name, display_name, avatar_icon FROM user WHERE id = %s", (row['user_id'],))
-        r['user'] = cur.fetchone()
-        r['date'] = row['created_at'].strftime("%Y/%m/%d %H:%M:%S")
-        r['content'] = row['content']
+        r['id'] = row['m_id']
+        #cur.execute("SELECT name, display_name, avatar_icon FROM user WHERE id = %s", (row['user_id'],))
+        r['user'] = {
+          "name": row["u_name"],
+          "display_name": row["u_display_name"],
+          "avatar_icon": row["u_avatar_icon"]
+        }
+        r['date'] = row['m_created_at'].strftime("%Y/%m/%d %H:%M:%S")
+        r['content'] = row['m_content']
         response.append(r)
     response.reverse()
 
