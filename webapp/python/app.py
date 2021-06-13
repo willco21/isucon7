@@ -258,17 +258,31 @@ def fetch_unread():
     time.sleep(1.0)
 
     cur = dbh().cursor()
-    cur.execute('SELECT id FROM channel')
+    cur.execute('''
+    select
+     c.id as channel_id,
+     tmp.read_message_count
+    from
+    channel c
+    left join (
+    select 
+        h.channel_id,
+        h.read_message_count
+    from haveread h
+    where h.user_id = %s
+    ) tmp on c.id = tmp.channel_id
+    ''', (user_id, ))
+    #cur.execute('SELECT id FROM channel')
     rows = cur.fetchall()
-    channel_ids = [row['id'] for row in rows]
+    #channel_ids = [row['id'] for row in rows]
 
     res = []
     unread = 0
-    for channel_id in channel_ids:
-        cur.execute('SELECT * FROM haveread WHERE user_id = %s AND channel_id = %s', (user_id, channel_id))
-        row = cur.fetchone()
-        if row:
-            unread = int(redis_count.get(channel_id)) - int(row["read_message_count"])
+    for row in rows:
+        read_message_count = row["read_message_count"]
+        channel_id = row["channel_id"]
+        if read_message_count:
+            unread = int(redis_count.get(channel_id)) - int(read_message_count)
             #cur.execute('SELECT COUNT(*) as cnt FROM message WHERE channel_id = %s AND %s < id',
             #            (channel_id, row['message_id']))
         else:
