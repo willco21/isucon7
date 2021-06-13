@@ -432,27 +432,27 @@ def ext2mime(ext):
     return ''
 
 
-@app.route('/icons/<file_name>')
-def get_icon(file_name):
-    cur = dbh().cursor()
-    cur.execute("SELECT name FROM image WHERE name = %s", (file_name,))
-    row = cur.fetchone()
-    ext = os.path.splitext(file_name)[1] if '.' in file_name else ''
-    file_name = row['name']
-    file_path = icons_folder / file_name
-    mime = ext2mime(ext)
-    with open(str(file_path), mode='rb') as f:
-        content = f.read()
-        if row and mime:
-            return flask.Response(content, mimetype=mime)
-    flask.abort(404)
+#@app.route('/icons/<file_name>')
+#def get_icon(file_name):
+#    cur = dbh().cursor()
+#    cur.execute("SELECT name FROM image WHERE name = %s", (file_name,))
+#    row = cur.fetchone()
+#    ext = os.path.splitext(file_name)[1] if '.' in file_name else ''
+#    file_name = row['name']
+#    file_path = icons_folder / file_name
+#    mime = ext2mime(ext)
+#    with open(str(file_path), mode='rb') as f:
+#        content = f.read()
+#        if row and mime:
+#            return flask.Response(content, mimetype=mime)
+#    flask.abort(404)
 
 def save_icon2local(file_name, binary):
     file_path = icons_folder / file_name
     with open(str(file_path), mode='wb') as f:
         f.write(binary)
 
-@app.route('/icons/tmp')
+@app.route('/tmp/icons')
 def create_icons():
     cur = dbh().cursor()
     cur.execute("SELECT * FROM image")
