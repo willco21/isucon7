@@ -366,7 +366,8 @@ def post_profile():
                 avatar_data = data
 
     if avatar_name and avatar_data:
-        cur.execute("INSERT INTO image (name, data) VALUES (%s, _binary %s)", (avatar_name, avatar_data))
+        cur.execute("INSERT INTO image (name, data) VALUES (%s, %s)", (avatar_name, ''))
+        save_icon2local(avatar_name, avatar_data)
         cur.execute("UPDATE user SET avatar_icon = %s WHERE id = %s", (avatar_name, user_id))
 
     if display_name:
@@ -388,14 +389,33 @@ def ext2mime(ext):
 @app.route('/icons/<file_name>')
 def get_icon(file_name):
     cur = dbh().cursor()
-    cur.execute("SELECT * FROM image WHERE name = %s", (file_name,))
+    cur.execute("SELECT name FROM image WHERE name = %s", (file_name,))
     row = cur.fetchone()
     ext = os.path.splitext(file_name)[1] if '.' in file_name else ''
+    file_name = row['name']
+    file_path = icons_folder / file_name
     mime = ext2mime(ext)
-    if row and mime:
-        return flask.Response(row['data'], mimetype=mime)
+    with open(str(file_path), mode='rb') as f:
+        content = f.read()
+        if row and mime:
+            return flask.Response(content, mimetype=mime)
     flask.abort(404)
 
+def save_icon2local(file_name, binary):
+    file_path = icons_folder / file_name
+    with open(str(file_path), mode='wb') as f:
+        f.write(binary)
+
+@app.route('/icons/tmp')
+def create_icons():
+    cur = dbh().cursor()
+    cur.execute("SELECT * FROM image")
+    rows = cur.fetchall()
+    for row in rows:
+        file_name = row['name']
+        binary = row['data']
+        save_icon2local(file_name, binary)
+    return ('', 204)
 
 if __name__ == "__main__":
     app.run(port=8080, debug=True, threaded=True)
