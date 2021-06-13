@@ -9,13 +9,17 @@ import random
 import string
 import tempfile
 import time
-
+import redis
 
 static_folder = pathlib.Path(__file__).resolve().parent.parent / 'public'
 icons_folder = static_folder / 'icons'
 app = flask.Flask(__name__, static_folder=str(static_folder), static_url_path='')
 app.secret_key = 'tonymoris'
 avatar_max_size = 1 * 1024 * 1024
+
+pool = redis.ConnectionPool(host='localhost', port=6379, db=0)
+redis_count = redis.StrictRedis(connection_pool=pool)
+
 
 if not os.path.exists(str(icons_folder)):
     os.makedirs(str(icons_folder))
@@ -62,6 +66,12 @@ def get_initialize():
     cur.execute("DELETE FROM message WHERE id > 10000")
     cur.execute("DELETE FROM haveread")
     cur.close()
+
+    cur = dbh().cursor()
+    cur.execute('select channel_id, count(*) as cnt from message group by channel_id')
+    rows = cur.fetchall()
+    for row in rows:
+      redis_count.set(row["channel_id"], int(row["cnt"]))
     return ('', 204)
 
 
@@ -73,6 +83,7 @@ def db_get_user(cur, user_id):
 def db_add_message(cur, channel_id, user_id, content):
     cur.execute("INSERT INTO message (channel_id, user_id, content, created_at) VALUES (%s, %s, %s, NOW())",
                 (channel_id, user_id, content))
+    redis_count.set(channel_id, int(redis_count.get(channel_id))+1)
 
 
 def login_required(func):
@@ -229,11 +240,11 @@ def get_message():
         response.append(r)
     response.reverse()
 
-    max_message_id = max(r['id'] for r in rows) if rows else 0
-    cur.execute('INSERT INTO haveread (user_id, channel_id, message_id, updated_at, created_at)'
-                ' VALUES (%s, %s, %s, NOW(), NOW())'
-                ' ON DUPLICATE KEY UPDATE message_id = %s, updated_at = NOW()',
-                (user_id, channel_id, max_message_id, max_message_id))
+    max_message_id = max(r['m_id'] for r in rows) if rows else 0
+    cur.execute('INSERT INTO haveread (user_id, channel_id, message_id, updated_at, created_at, read_message_count)'
+                ' VALUES (%s, %s, %s, NOW(), NOW(), %s)'
+                ' ON DUPLICATE KEY UPDATE message_id = %s, updated_at = NOW(), read_message_count = %s',
+                (user_id, channel_id, max_message_id, redis_count[channel_id], max_message_id, redis_count[channel_id]))
 
     return flask.jsonify(response)
 
@@ -252,17 +263,20 @@ def fetch_unread():
     channel_ids = [row['id'] for row in rows]
 
     res = []
+    unread = 0
     for channel_id in channel_ids:
         cur.execute('SELECT * FROM haveread WHERE user_id = %s AND channel_id = %s', (user_id, channel_id))
         row = cur.fetchone()
         if row:
-            cur.execute('SELECT COUNT(*) as cnt FROM message WHERE channel_id = %s AND %s < id',
-                        (channel_id, row['message_id']))
+            unread = int(redis_count.get(channel_id)) - int(row["read_message_count"])
+            #cur.execute('SELECT COUNT(*) as cnt FROM message WHERE channel_id = %s AND %s < id',
+            #            (channel_id, row['message_id']))
         else:
-            cur.execute('SELECT COUNT(*) as cnt FROM message WHERE channel_id = %s', (channel_id,))
+            unread = int(redis_count.get(channel_id))
+            #cur.execute('SELECT COUNT(*) as cnt FROM message WHERE channel_id = %s', (channel_id,))
         r = {}
         r['channel_id'] = channel_id
-        r['unread'] = int(cur.fetchone()['cnt'])
+        r['unread'] = unread
         res.append(r)
     return flask.jsonify(res)
 
@@ -342,6 +356,7 @@ def post_add_channel():
     cur.execute("INSERT INTO channel (name, description, updated_at, created_at) VALUES (%s, %s, NOW(), NOW())",
                 (name, description))
     channel_id = cur.lastrowid
+    redis_count.set(channel_id, 0)
     return flask.redirect('/channel/' + str(channel_id), 303)
 
 
